@@ -59,7 +59,8 @@ body::before {
 
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
 }
 
@@ -83,6 +84,7 @@ button:hover {
 button:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
+select:focus-visible,
 summary:focus-visible {
   outline: 2px solid rgba(255, 122, 24, 0.76);
   outline-offset: 2px;
@@ -100,7 +102,8 @@ button:disabled {
 }
 
 input,
-textarea {
+textarea,
+select {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
@@ -112,7 +115,8 @@ textarea {
 }
 
 input:focus,
-textarea:focus {
+textarea:focus,
+select:focus {
   border-color: var(--orange-line);
   background: rgba(5, 5, 5, 0.82);
   box-shadow: 0 0 0 3px rgba(255, 122, 24, 0.12);
@@ -121,6 +125,17 @@ textarea:focus {
 input::placeholder,
 textarea::placeholder {
   color: #716b64;
+}
+
+select {
+  min-height: 40px;
+}
+
+input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--orange);
+  padding: 0;
 }
 
 textarea {
@@ -404,7 +419,7 @@ nav button.active::after {
 
 .topbar-metrics {
   display: grid;
-  grid-template-columns: repeat(3, minmax(72px, 1fr));
+  grid-template-columns: repeat(4, minmax(72px, 1fr));
   gap: 8px;
 }
 
@@ -497,6 +512,41 @@ nav button.active::after {
   grid-template-rows: auto;
 }
 
+.project-switcher {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 10px;
+}
+
+.project-switcher label {
+  display: grid;
+  gap: 6px;
+}
+
+.project-switcher span {
+  color: var(--orange);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.project-switcher small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.project-form {
+  display: grid;
+  gap: 7px;
+}
+
+.project-form button {
+  min-height: 34px;
+}
+
 .list-pane,
 .messages,
 .skill-body,
@@ -566,6 +616,36 @@ nav button.active::after {
   border-color: var(--orange-line);
   background: rgba(255, 122, 24, 0.12);
   box-shadow: inset 3px 0 0 var(--orange);
+}
+
+.skill-project-picker {
+  display: grid;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 4px;
+  padding-bottom: 10px;
+}
+
+.skill-list-item {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.skill-toggle {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  width: max-content;
+  max-width: 100%;
+  color: var(--muted-strong);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.skill-toggle span {
+  min-width: 0;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
 }
 
 .detail-header {
@@ -956,7 +1036,7 @@ nav button.active::after {
   }
 
   .topbar-metrics {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .create-form,

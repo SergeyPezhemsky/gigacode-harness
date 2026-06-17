@@ -11,6 +11,8 @@ import { RunView } from "./views/RunView.jsx";
 export function App() {
   const [activeTab, setActiveTab] = useState("chats");
   const [health, setHealth] = useState(null);
+  const [projects, setProjects] = useState([]);
+  const [selectedProjectId, setSelectedProjectId] = useState("");
   const [chats, setChats] = useState([]);
   const [selectedChat, setSelectedChat] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
@@ -24,10 +26,16 @@ export function App() {
   const stats = useMemo(
     () => [
       { label: "Чаты", value: chats.length },
+      { label: "Проекты", value: projects.length },
       { label: "Навыки", value: skills.length },
       { label: "Ворк-три", value: worktrees.length }
     ],
-    [chats.length, skills.length, worktrees.length]
+    [chats.length, projects.length, skills.length, worktrees.length]
+  );
+
+  const selectedProject = useMemo(
+    () => projects.find((project) => project.id === selectedProjectId) || projects.find((project) => project.current) || projects[0] || null,
+    [projects, selectedProjectId]
   );
 
   useEffect(() => {
@@ -37,15 +45,18 @@ export function App() {
   async function refreshBase() {
     setError("");
     try {
-      const [healthData, chatsData, skillsData] = await Promise.all([
+      const [healthData, chatsData, projectsData, skillsData] = await Promise.all([
         api("/api/health"),
         api("/api/chats"),
+        api("/api/projects"),
         api("/api/skills")
       ]);
       setHealth(healthData);
       setChats(chatsData.chats);
+      setProjects(projectsData.projects);
+      setSelectedProjectId((current) => current || projectsData.projects.find((project) => project.current)?.id || projectsData.projects[0]?.id || "");
       setSkills(skillsData.skills);
-      return { health: healthData, chats: chatsData.chats, skills: skillsData.skills };
+      return { health: healthData, chats: chatsData.chats, projects: projectsData.projects, skills: skillsData.skills };
     } catch (err) {
       setError(err.message);
       return null;
@@ -63,6 +74,10 @@ export function App() {
         {activeTab === "chats" ? (
           <ChatsView
             chats={chats}
+            projects={projects}
+            selectedProject={selectedProject}
+            selectedProjectId={selectedProjectId}
+            setSelectedProjectId={setSelectedProjectId}
             selectedChat={selectedChat}
             setSelectedChat={setSelectedChat}
             chatMessages={chatMessages}
@@ -74,6 +89,7 @@ export function App() {
 
         {activeTab === "skills" ? (
           <SkillsView
+            projects={projects}
             repoPath={repoPath}
             setRepoPath={setRepoPath}
             skills={skills}

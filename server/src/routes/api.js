@@ -3,9 +3,10 @@ import path from "node:path";
 import { gigaDir } from "../config.js";
 import { fileExists, isGigacodeSkillPath, normalizePath } from "../utils/path-utils.js";
 import { getChatById, listChats } from "../services/chat-service.js";
-import { listSkills, readSkillContent } from "../services/skill-service.js";
+import { listSkills, readSkillContent, setProjectSkillEnabled } from "../services/skill-service.js";
 import { createWorktree, listWorktrees } from "../services/git-service.js";
 import { streamAgentRun } from "../services/agent-runner.js";
+import { addProject, listProjects } from "../services/project-service.js";
 
 export function createApiRouter() {
   const router = express.Router();
@@ -25,6 +26,28 @@ export function createApiRouter() {
       res.json({ chats: await listChats(), root: gigaDir });
     } catch (error) {
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  router.get("/projects", async (_req, res) => {
+    try {
+      const chats = await listChats();
+      res.json({ projects: await listProjects(chats) });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  router.post("/projects", async (req, res) => {
+    try {
+      const project = await addProject({
+        name: req.body.name,
+        projectPath: req.body.path
+      });
+      const chats = await listChats();
+      res.json({ ok: true, project, projects: await listProjects(chats) });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
     }
   });
 
@@ -70,6 +93,19 @@ export function createApiRouter() {
     }
 
     res.json({ content: await readSkillContent(skillPath) });
+  });
+
+  router.post("/skills/toggle", async (req, res) => {
+    try {
+      const skills = await setProjectSkillEnabled({
+        projectPath: req.body.projectPath,
+        skillName: req.body.skillName,
+        enabled: Boolean(req.body.enabled)
+      });
+      res.json({ ok: true, skills });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
   });
 
   router.get("/worktrees", async (req, res) => {

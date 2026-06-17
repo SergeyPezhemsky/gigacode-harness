@@ -18,5 +18,6 @@ export const roleLabels = {
 
 export const scopeLabels = {
   personal: "Личный",
+  library: "Библиотека",
   project: "Проектный"
 };

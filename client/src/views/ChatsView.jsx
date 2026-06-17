@@ -7,16 +7,31 @@ import { roleLabels } from "../constants.js";
 import { formatDate } from "../utils/format.js";
 import { thinkingText, toChatMessages, upsertMessage } from "../utils/messages.js";
 
-export function ChatsView({ chats, selectedChat, setSelectedChat, chatMessages, setChatMessages, refreshBase, setError }) {
+export function ChatsView({
+  chats,
+  projects,
+  selectedProject,
+  selectedProjectId,
+  setSelectedProjectId,
+  selectedChat,
+  setSelectedChat,
+  chatMessages,
+  setChatMessages,
+  refreshBase,
+  setError
+}) {
   const [chatRunEvents, setChatRunEvents] = useState([]);
   const [chatRunDone, setChatRunDone] = useState(true);
   const [isCreatingChat, setIsCreatingChat] = useState(false);
   const [newChatForm, setNewChatForm] = useState({ cwd: "", prompt: "" });
+  const [projectForm, setProjectForm] = useState({ name: "", path: "" });
   const [continuePrompt, setContinuePrompt] = useState("");
   const [loading, setLoading] = useState("");
   const chatThreadRef = useRef(null);
   const abortRef = useRef(null);
 
+  const activeProjectPath = selectedProject?.path || "";
+  const visibleChats = activeProjectPath ? chats.filter((chat) => chat.cwd === activeProjectPath) : chats;
   const visibleMessages = toChatMessages(chatMessages);
   const runState = loading ? "running" : chatRunDone ? "idle" : "streaming";
   const inspectorTitle = isCreatingChat ? "Новая сессия" : selectedChat ? "Текущий чат" : "Контекст";
@@ -34,6 +49,11 @@ export function ChatsView({ chats, selectedChat, setSelectedChat, chatMessages, 
   useEffect(() => {
     return () => abortRef.current?.abort();
   }, []);
+
+  useEffect(() => {
+    if (!selectedProject) return;
+    setNewChatForm((current) => ({ ...current, cwd: selectedProject.path }));
+  }, [selectedProject]);
 
   async function loadChatById(id) {
     const data = await api(`/api/chats/${encodeURIComponent(id)}`);
@@ -64,8 +84,32 @@ export function ChatsView({ chats, selectedChat, setSelectedChat, chatMessages, 
     setChatRunEvents([]);
     setChatRunDone(true);
     setContinuePrompt("");
+    setNewChatForm((current) => ({ ...current, cwd: activeProjectPath }));
     setIsCreatingChat(true);
     setError("");
+  }
+
+  async function addProject(event) {
+    event.preventDefault();
+    const projectPath = projectForm.path.trim();
+    if (!projectPath) return;
+
+    setLoading("add-project");
+    setError("");
+    try {
+      const data = await api("/api/projects", {
+        method: "POST",
+        body: JSON.stringify({ name: projectForm.name.trim(), path: projectPath })
+      });
+      setProjectForm({ name: "", path: "" });
+      const nextProject = data.project || data.projects.find((project) => project.path === projectPath);
+      if (nextProject) setSelectedProjectId(nextProject.id);
+      await refreshBase();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading("");
+    }
   }
 
   async function createChat(event) {
@@ -73,6 +117,7 @@ export function ChatsView({ chats, selectedChat, setSelectedChat, chatMessages, 
     const prompt = newChatForm.prompt.trim();
     if (!prompt) return;
 
+    const cwd = newChatForm.cwd.trim() || activeProjectPath;
     const knownChatIds = new Set(chats.map((chat) => chat.id));
     setLoading("create-chat");
     setError("");
@@ -86,7 +131,7 @@ export function ChatsView({ chats, selectedChat, setSelectedChat, chatMessages, 
       const response = await fetch("/api/agent/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd: newChatForm.cwd.trim(), prompt }),
+        body: JSON.stringify({ cwd, prompt }),
         signal: controller.signal
       });
 
@@ -113,7 +158,7 @@ export function ChatsView({ chats, selectedChat, setSelectedChat, chatMessages, 
       if (createdChat) {
         await loadChatById(createdChat.id);
         setIsCreatingChat(false);
-        setNewChatForm({ ...newChatForm, prompt: "" });
+        setNewChatForm({ cwd, prompt: "" });
       } else {
         setChatMessages(toChatMessages(streamEvents));
       }
@@ -204,15 +249,41 @@ export function ChatsView({ chats, selectedChat, setSelectedChat, chatMessages, 
   return (
     <section className="chat-dashboard">
       <div className="list-pane chat-list-pane">
+        <div className="project-switcher">
+          <label>
+            <span>Проект</span>
+            <select value={selectedProjectId} onChange={(event) => setSelectedProjectId(event.target.value)}>
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <small>{activeProjectPath || "Проект не выбран"}</small>
+          <form className="project-form" onSubmit={addProject}>
+            <input
+              value={projectForm.name}
+              onChange={(event) => setProjectForm({ ...projectForm, name: event.target.value })}
+              placeholder="Название"
+            />
+            <input
+              value={projectForm.path}
+              onChange={(event) => setProjectForm({ ...projectForm, path: event.target.value })}
+              placeholder="Директория проекта"
+            />
+            <button disabled={loading === "add-project" || !projectForm.path.trim()}>Добавить</button>
+          </form>
+        </div>
         <button className="new-chat-button" onClick={startNewChat} type="button">
           Новый чат
         </button>
-        {chats.length ? (
-          chats.map((chat) => (
+        {visibleChats.length ? (
+          visibleChats.map((chat) => (
             <ChatListItem key={chat.filePath} chat={chat} selected={selectedChat?.id === chat.id} onOpen={openChat} />
           ))
         ) : (
-          <EmptyState title="Чаты не найдены" detail="Ожидаются файлы .gigacode/projects/*/chats/*.jsonl." />
+          <EmptyState title="В проекте нет чатов" detail="Создайте чат, и он стартует в выбранной директории проекта." />
         )}
       </div>
 
