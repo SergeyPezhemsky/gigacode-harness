@@ -115,12 +115,36 @@ function toChatMessages(messages) {
     .filter((item) => item.text && ["user", "assistant"].includes(item.role));
 }
 
+function thinkingText(event) {
+  if (!event || typeof event !== "object") return "";
+  if (event.type === "stderr") return event.text ? `stderr: ${event.text.trim()}` : "stderr";
+  if (event.error) return `Ошибка: ${event.error}`;
+  if (event.type === "done") return `Процесс завершился с кодом ${event.code}`;
+
+  const parts = event.message?.parts || [];
+  const functionCall = parts.find((part) => part?.functionCall);
+  if (functionCall) {
+    return `Вызов инструмента: ${functionCall.functionCall.name || "tool"}`;
+  }
+
+  const functionResponse = parts.find((part) => part?.functionResponse);
+  if (functionResponse) {
+    return `Результат инструмента: ${functionResponse.functionResponse.name || "tool"}`;
+  }
+
+  if (event.subtype) return `${event.type || "event"}: ${event.subtype}`;
+  if (event.type && roleOf(event) !== "user" && roleOf(event) !== "assistant") return event.type;
+  return "";
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState("chats");
   const [health, setHealth] = useState(null);
   const [chats, setChats] = useState([]);
   const [selectedChat, setSelectedChat] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
+  const [chatRunEvents, setChatRunEvents] = useState([]);
+  const [chatRunDone, setChatRunDone] = useState(true);
   const [continuePrompt, setContinuePrompt] = useState("");
   const [skills, setSkills] = useState([]);
   const [selectedSkill, setSelectedSkill] = useState(null);
@@ -149,7 +173,12 @@ function App() {
 
   useEffect(() => {
     if (!chatThreadRef.current) return;
-    chatThreadRef.current.scrollTop = chatThreadRef.current.scrollHeight;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!chatThreadRef.current) return;
+        chatThreadRef.current.scrollTop = chatThreadRef.current.scrollHeight;
+      });
+    });
   }, [chatMessages, selectedChat]);
 
   async function refreshBase() {
@@ -170,6 +199,8 @@ function App() {
 
   async function openChat(chat) {
     setSelectedChat(chat);
+    setChatRunEvents([]);
+    setChatRunDone(true);
     setContinuePrompt("");
     setError("");
     try {
@@ -189,17 +220,15 @@ function App() {
     setLoading("continue-chat");
     setError("");
     setContinuePrompt("");
+    setChatRunEvents([]);
+    setChatRunDone(false);
     setChatMessages((items) => [...items, { id: `local-${Date.now()}`, role: "user", text: prompt }]);
 
     try {
-      const response = await fetch("/api/agent/run", {
+      const response = await fetch(`/api/chats/${encodeURIComponent(selectedChat.id)}/continue`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          cwd: selectedChat.cwd || "",
-          prompt,
-          sessionId: selectedChat.sessionId || selectedChat.id
-        })
+        body: JSON.stringify({ prompt })
       });
 
       if (!response.ok) {
@@ -212,6 +241,7 @@ function App() {
       let buffer = "";
       let streamEvents = [];
       const assistantDraftId = `assistant-${Date.now()}`;
+      let exitCode = 0;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -221,11 +251,21 @@ function App() {
         buffer = chunks.pop() || "";
 
         for (const chunk of chunks) {
+          const eventLine = chunk.split("\n").find((line) => line.startsWith("event: "));
+          const eventName = eventLine?.slice(7) || "message";
           const dataLine = chunk.split("\n").find((line) => line.startsWith("data: "));
           if (!dataLine) continue;
           try {
-            const eventData = JSON.parse(dataLine.slice(6));
+            const parsed = JSON.parse(dataLine.slice(6));
+            const eventData = eventName === "message" ? parsed : { ...parsed, type: eventName };
             streamEvents = [...streamEvents, eventData];
+            const thought = thinkingText(eventData);
+            if (thought) {
+              setChatRunEvents((items) => [...items, { id: `${Date.now()}-${items.length}`, text: thought }]);
+            }
+            if (eventData.type === "done") {
+              exitCode = eventData.code ?? 0;
+            }
             const messages = toChatMessages([eventData]);
             const assistantMessage = messages.find((message) => message.role === "assistant");
             if (assistantMessage) {
@@ -244,9 +284,13 @@ function App() {
       setSelectedChat(refreshed.chat);
       setChatMessages(refreshed.displayMessages?.length ? refreshed.displayMessages : toChatMessages(streamEvents));
       await refreshBase();
+      if (exitCode !== 0) {
+        throw new Error(`GigaCode завершился с кодом ${exitCode}`);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
+      setChatRunDone(true);
       setLoading("");
     }
   }
@@ -420,6 +464,16 @@ function App() {
                       </article>
                     ))}
                   </div>
+                  {chatRunEvents.length ? (
+                    <details className="thinking-panel" open={!chatRunDone}>
+                      <summary>{chatRunDone ? "Ход выполнения" : "GigaCode думает..."}</summary>
+                      <div>
+                        {chatRunEvents.map((item) => (
+                          <p key={item.id}>{item.text}</p>
+                        ))}
+                      </div>
+                    </details>
+                  ) : null}
                   <form className="chat-compose" onSubmit={continueChat}>
                     <textarea
                       value={continuePrompt}

@@ -8,8 +8,11 @@
   box-sizing: border-box;
 }
 
+html,
 body {
+  height: 100%;
   margin: 0;
+  overflow: hidden;
 }
 
 button,
@@ -62,12 +65,14 @@ pre {
 }
 
 .app-shell {
-  min-height: 100vh;
+  height: 100vh;
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .sidebar {
+  min-height: 0;
   display: grid;
   grid-template-rows: auto auto 1fr;
   gap: 22px;
@@ -146,9 +151,11 @@ nav button.active {
 
 .workspace {
   min-width: 0;
+  min-height: 0;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
   gap: 16px;
+  overflow: hidden;
   padding: 22px;
 }
 
@@ -183,6 +190,7 @@ nav button.active {
   display: grid;
   grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
   gap: 16px;
+  overflow: hidden;
 }
 
 .list-pane,
@@ -211,7 +219,7 @@ nav button.active {
 
 .detail-pane {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
   overflow: hidden;
 }
 
@@ -328,6 +336,32 @@ nav button.active {
 .chat-compose textarea {
   min-height: 58px;
   max-height: 160px;
+}
+
+.thinking-panel {
+  border-top: 1px solid #dbe3ec;
+  background: #fbfcfe;
+  padding: 10px 14px;
+}
+
+.thinking-panel summary {
+  cursor: pointer;
+  color: #3b4c5f;
+  font-size: 13px;
+}
+
+.thinking-panel div {
+  display: grid;
+  gap: 6px;
+  max-height: 150px;
+  overflow: auto;
+  padding-top: 8px;
+}
+
+.thinking-panel p {
+  margin: 0;
+  color: #657383;
+  font-size: 13px;
 }
 
 .skill-body {

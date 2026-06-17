@@ -48,8 +48,9 @@ async function readJsonl(filePath, limit = 200) {
     const content = await fs.readFile(filePath, "utf8");
     const lines = content.split(/\r?\n/).filter(Boolean);
     const parsed = [];
+    const selectedLines = limit ? lines.slice(-limit) : lines;
 
-    for (const line of lines.slice(-limit)) {
+    for (const line of selectedLines) {
       try {
         parsed.push(JSON.parse(line));
       } catch {
@@ -159,7 +160,7 @@ function summarizeChat(projectName, filePath, messages) {
     filePath,
     updatedAt: stats.mtime.toISOString(),
     size: stats.size,
-    title: title || projectName || path.basename(filePath),
+    title: title || "Без названия",
     preview: (lastAssistant?.text || "").replace(/\s+/g, " ").slice(0, 180)
   };
 }
@@ -180,7 +181,7 @@ async function listChats() {
 
   const chats = [];
   for (const filePath of chatFiles) {
-    const messages = await readJsonl(filePath, 60);
+    const messages = await readJsonl(filePath, null);
     const parts = path.relative(projectsRoot, filePath).split(path.sep);
     chats.push(summarizeChat(parts[0] || "global", filePath, messages));
   }
@@ -269,6 +270,44 @@ async function listWorktrees(repoPath) {
   return rows;
 }
 
+function streamAgentRun({ prompt, cwd, sessionId }, res) {
+  const args = [];
+  const normalizedCwd = normalizePath(cwd);
+  const runCwd = normalizedCwd && fileExists(normalizedCwd) ? normalizedCwd : process.cwd();
+
+  if (sessionId) args.push("--resume", sessionId);
+  args.push("--prompt", prompt, "--output-format", "stream-json", "--include-partial-messages");
+
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive"
+  });
+
+  const child = spawn("gigacode", args, { cwd: runCwd, windowsHide: true });
+  const runId = randomUUID();
+
+  child.stdout.on("data", (chunk) => {
+    for (const line of chunk.toString("utf8").split(/\r?\n/).filter(Boolean)) {
+      res.write(`event: message\ndata: ${line}\n\n`);
+    }
+  });
+
+  child.stderr.on("data", (chunk) => {
+    res.write(`event: stderr\ndata: ${JSON.stringify({ runId, text: chunk.toString("utf8") })}\n\n`);
+  });
+
+  child.on("error", (error) => {
+    res.write(`event: error\ndata: ${JSON.stringify({ runId, error: error.message })}\n\n`);
+    res.end();
+  });
+
+  child.on("close", (code) => {
+    res.write(`event: done\ndata: ${JSON.stringify({ runId, code })}\n\n`);
+    res.end();
+  });
+}
+
 app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
@@ -295,8 +334,25 @@ app.get("/api/chats/:id", async (req, res) => {
     return;
   }
 
-  const messages = await readJsonl(chat.filePath, 1000);
+  const messages = await readJsonl(chat.filePath, null);
   res.json({ chat: summarizeChat(chat.projectName, chat.filePath, messages), messages, displayMessages: normalizeChatMessages(messages) });
+});
+
+app.post("/api/chats/:id/continue", async (req, res) => {
+  const prompt = String(req.body.prompt || "").trim();
+  if (!prompt) {
+    res.status(400).json({ error: "Нужно заполнить промпт" });
+    return;
+  }
+
+  const chats = await listChats();
+  const chat = chats.find((item) => item.id === req.params.id);
+  if (!chat) {
+    res.status(404).json({ error: "Чат не найден" });
+    return;
+  }
+
+  streamAgentRun({ prompt, cwd: chat.cwd, sessionId: chat.sessionId || chat.id }, res);
 });
 
 app.get("/api/skills", async (req, res) => {
