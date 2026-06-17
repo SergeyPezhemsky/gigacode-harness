@@ -203,10 +203,15 @@ nav button.active {
   padding: 12px;
 }
 
-.detail-pane,
 .run-layout {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.detail-pane {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;
 }
 
@@ -309,6 +314,20 @@ nav button.active {
 .chat-thread .message.assistant span {
   background: #dceee4;
   color: #28613d;
+}
+
+.chat-compose {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  border-top: 1px solid #dbe3ec;
+  padding: 12px 14px;
+}
+
+.chat-compose textarea {
+  min-height: 58px;
+  max-height: 160px;
 }
 
 .skill-body {
@@ -416,6 +435,10 @@ nav button.active {
   .run-layout form {
     border-right: 0;
     border-bottom: 1px solid #dbe3ec;
+  }
+
+  .chat-compose {
+    grid-template-columns: 1fr;
   }
 
   .chat-thread .message {

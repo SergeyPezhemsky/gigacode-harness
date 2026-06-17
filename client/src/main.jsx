@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
@@ -74,13 +74,28 @@ function extractText(value, depth = 0) {
   return "";
 }
 
+function messagePartsText(item) {
+  const payload = item?.message ?? item;
+  if (!payload) return "";
+  const parts = payload.parts || payload.content?.parts || payload.content;
+  if (Array.isArray(parts)) {
+    return parts
+      .map((part) => (typeof part === "string" ? part : part?.text || ""))
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+  }
+  if (typeof parts === "string") return parts.trim();
+  return "";
+}
+
 function messageText(item) {
-  return extractText(item?.message ?? item);
+  return item?.text || messagePartsText(item) || extractText(item?.message ?? item);
 }
 
 function roleOf(item) {
   const role = item?.message?.role || item?.role || item?.type || "event";
-  if (role === "result") return "assistant";
+  if (role === "model" || role === "result") return "assistant";
   if (role === "stderr") return "stderr";
   if (role === "raw") return "raw";
   return role;
@@ -97,7 +112,7 @@ function toChatMessages(messages) {
       const text = messageText(item).trim();
       return { id: item.uuid || item.id || index, role, text };
     })
-    .filter((item) => item.text && ["user", "assistant", "system", "raw"].includes(item.role));
+    .filter((item) => item.text && ["user", "assistant"].includes(item.role));
 }
 
 function App() {
@@ -106,6 +121,7 @@ function App() {
   const [chats, setChats] = useState([]);
   const [selectedChat, setSelectedChat] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
+  const [continuePrompt, setContinuePrompt] = useState("");
   const [skills, setSkills] = useState([]);
   const [selectedSkill, setSelectedSkill] = useState(null);
   const [skillContent, setSkillContent] = useState("");
@@ -116,6 +132,7 @@ function App() {
   const [runEvents, setRunEvents] = useState([]);
   const [loading, setLoading] = useState("");
   const [error, setError] = useState("");
+  const chatThreadRef = useRef(null);
 
   const stats = useMemo(
     () => [
@@ -129,6 +146,11 @@ function App() {
   useEffect(() => {
     refreshBase();
   }, []);
+
+  useEffect(() => {
+    if (!chatThreadRef.current) return;
+    chatThreadRef.current.scrollTop = chatThreadRef.current.scrollHeight;
+  }, [chatMessages, selectedChat]);
 
   async function refreshBase() {
     setError("");
@@ -148,12 +170,84 @@ function App() {
 
   async function openChat(chat) {
     setSelectedChat(chat);
+    setContinuePrompt("");
     setError("");
     try {
       const data = await api(`/api/chats/${encodeURIComponent(chat.id)}`);
-      setChatMessages(data.messages);
+      setSelectedChat(data.chat);
+      setChatMessages(data.displayMessages || data.messages);
     } catch (err) {
       setError(err.message);
+    }
+  }
+
+  async function continueChat(event) {
+    event.preventDefault();
+    const prompt = continuePrompt.trim();
+    if (!selectedChat || !prompt) return;
+
+    setLoading("continue-chat");
+    setError("");
+    setContinuePrompt("");
+    setChatMessages((items) => [...items, { id: `local-${Date.now()}`, role: "user", text: prompt }]);
+
+    try {
+      const response = await fetch("/api/agent/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cwd: selectedChat.cwd || "",
+          prompt,
+          sessionId: selectedChat.sessionId || selectedChat.id
+        })
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Не удалось продолжить диалог");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let streamEvents = [];
+      const assistantDraftId = `assistant-${Date.now()}`;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const chunks = buffer.split("\n\n");
+        buffer = chunks.pop() || "";
+
+        for (const chunk of chunks) {
+          const dataLine = chunk.split("\n").find((line) => line.startsWith("data: "));
+          if (!dataLine) continue;
+          try {
+            const eventData = JSON.parse(dataLine.slice(6));
+            streamEvents = [...streamEvents, eventData];
+            const messages = toChatMessages([eventData]);
+            const assistantMessage = messages.find((message) => message.role === "assistant");
+            if (assistantMessage) {
+              setChatMessages((items) => [
+                ...items.filter((item) => item.id !== assistantDraftId),
+                { ...assistantMessage, id: assistantDraftId }
+              ]);
+            }
+          } catch {
+            // Raw SSE chunks are not useful in the chat transcript.
+          }
+        }
+      }
+
+      const refreshed = await api(`/api/chats/${encodeURIComponent(selectedChat.id)}`);
+      setSelectedChat(refreshed.chat);
+      setChatMessages(refreshed.displayMessages?.length ? refreshed.displayMessages : toChatMessages(streamEvents));
+      await refreshBase();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading("");
     }
   }
 
@@ -318,7 +412,7 @@ function App() {
                     <strong>{selectedChat.title}</strong>
                     <small>{selectedChat.filePath}</small>
                   </div>
-                  <div className="messages chat-thread">
+                  <div className="messages chat-thread" ref={chatThreadRef}>
                     {toChatMessages(chatMessages).map((item) => (
                       <article key={item.id} className={`message ${item.role}`}>
                         <span>{roleLabels[item.role] || item.role}</span>
@@ -326,6 +420,16 @@ function App() {
                       </article>
                     ))}
                   </div>
+                  <form className="chat-compose" onSubmit={continueChat}>
+                    <textarea
+                      value={continuePrompt}
+                      onChange={(event) => setContinuePrompt(event.target.value)}
+                      placeholder="Продолжить диалог"
+                    />
+                    <button disabled={loading === "continue-chat" || !continuePrompt.trim()}>
+                      Отправить
+                    </button>
+                  </form>
                 </>
               ) : (
                 <EmptyState title="Выберите чат" detail="Содержимое загружается из JSONL по запросу." />

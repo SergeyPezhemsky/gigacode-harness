@@ -82,32 +82,85 @@ async function walk(dir, predicate, maxDepth = 6, depth = 0) {
 
 function textFromMessage(message) {
   const payload = message?.message ?? message;
-  const content = payload?.content;
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((item) => item?.text ?? item?.content ?? "")
-      .filter(Boolean)
-      .join("\n");
+  return textFromPayload(payload);
+}
+
+function textFromPayload(payload) {
+  if (!payload) return "";
+  if (typeof payload === "string") return payload;
+
+  const textParts = [];
+  const collect = (value) => {
+    if (!value) return;
+    if (typeof value === "string") {
+      textParts.push(value);
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach(collect);
+      return;
+    }
+    if (typeof value !== "object") return;
+    if (typeof value.text === "string") textParts.push(value.text);
+    else if (typeof value.content === "string") textParts.push(value.content);
+    else if (Array.isArray(value.content)) collect(value.content);
+    else if (Array.isArray(value.parts)) collect(value.parts);
+  };
+
+  collect(payload.parts);
+  collect(payload.content);
+  if (!textParts.length) collect(payload.text);
+  return textParts.filter(Boolean).join("\n").trim();
+}
+
+function roleFromEvent(event) {
+  const role = event?.message?.role || event?.role || event?.type || "event";
+  if (role === "model" || role === "assistant" || role === "result") return "assistant";
+  if (role === "user") return "user";
+  return role;
+}
+
+function normalizeChatMessages(messages) {
+  const normalized = [];
+
+  for (const [index, event] of messages.entries()) {
+    const role = roleFromEvent(event);
+    if (role !== "user" && role !== "assistant") continue;
+
+    const text = textFromMessage(event);
+    if (!text) continue;
+
+    normalized.push({
+      id: event.uuid || event.id || `${event.sessionId || "message"}-${index}`,
+      role,
+      text,
+      timestamp: event.timestamp || null
+    });
   }
-  return message?.result ?? message?.text ?? "";
+
+  return normalized;
 }
 
 function summarizeChat(projectName, filePath, messages) {
   const stats = fsSync.statSync(filePath);
-  const firstUser = messages.find((item) => item.type === "user" || item.message?.role === "user");
-  const lastAssistant = [...messages]
-    .reverse()
-    .find((item) => item.type === "assistant" || item.message?.role === "assistant" || item.type === "result");
+  const normalized = normalizeChatMessages(messages);
+  const firstUser = normalized.find((item) => item.role === "user");
+  const lastAssistant = [...normalized].reverse().find((item) => item.role === "assistant");
+  const firstEvent = messages.find((item) => item && typeof item === "object") || {};
+  const cwd = messages.find((item) => typeof item?.cwd === "string")?.cwd || "";
+  const sessionId = firstEvent.sessionId || path.basename(filePath, path.extname(filePath));
+  const title = (firstUser?.text || normalized[0]?.text || "").replace(/\s+/g, " ").slice(0, 90);
 
   return {
-    id: path.basename(filePath, path.extname(filePath)),
+    id: sessionId,
+    sessionId,
     projectName,
+    cwd,
     filePath,
     updatedAt: stats.mtime.toISOString(),
     size: stats.size,
-    title: textFromMessage(firstUser).slice(0, 90) || path.basename(filePath),
-    preview: textFromMessage(lastAssistant).slice(0, 180)
+    title: title || projectName || path.basename(filePath),
+    preview: (lastAssistant?.text || "").replace(/\s+/g, " ").slice(0, 180)
   };
 }
 
@@ -242,7 +295,8 @@ app.get("/api/chats/:id", async (req, res) => {
     return;
   }
 
-  res.json({ chat, messages: await readJsonl(chat.filePath, 1000) });
+  const messages = await readJsonl(chat.filePath, 1000);
+  res.json({ chat: summarizeChat(chat.projectName, chat.filePath, messages), messages, displayMessages: normalizeChatMessages(messages) });
 });
 
 app.get("/api/skills", async (req, res) => {
