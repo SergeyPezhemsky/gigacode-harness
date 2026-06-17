@@ -63,13 +63,43 @@ export function displayRole(item) {
 }
 
 export function toChatMessages(messages) {
-  return messages
+  return collapsePartialAssistantMessages(messages
     .map((item, index) => {
       const role = roleOf(item);
       const text = messageText(item).trim();
       return { id: item.uuid || item.id || index, role, text };
     })
-    .filter((item) => item.text && ["user", "assistant"].includes(item.role));
+    .filter((item) => item.text && ["user", "assistant"].includes(item.role)));
+}
+
+export function collapsePartialAssistantMessages(messages) {
+  const collapsed = [];
+
+  for (const item of messages) {
+    const previous = collapsed[collapsed.length - 1];
+    if (item.role === "assistant" && previous?.role === "assistant" && isLikelyPartialUpdate(previous.text, item.text)) {
+      collapsed[collapsed.length - 1] = {
+        ...item,
+        text: item.text.length >= previous.text.length ? item.text : previous.text
+      };
+      continue;
+    }
+
+    collapsed.push(item);
+  }
+
+  return collapsed;
+}
+
+export function upsertMessage(messages, nextMessage, draftId) {
+  if (!nextMessage) return messages;
+  const withoutDraft = messages.filter((item) => item.id !== draftId);
+  return collapsePartialAssistantMessages([...withoutDraft, { ...nextMessage, id: draftId }]);
+}
+
+function isLikelyPartialUpdate(previousText, nextText) {
+  if (!previousText || !nextText) return false;
+  return previousText === nextText || nextText.startsWith(previousText) || previousText.startsWith(nextText);
 }
 
 export function thinkingText(event) {

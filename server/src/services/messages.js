@@ -48,13 +48,30 @@ export function normalizeChatMessages(messages) {
     const text = textFromMessage(event);
     if (!text) continue;
 
-    normalized.push({
+    const item = {
       id: event.uuid || event.id || `${event.sessionId || "message"}-${index}`,
       role,
       text,
       timestamp: event.timestamp || null
-    });
+    };
+
+    const previous = normalized[normalized.length - 1];
+    if (role === "assistant" && previous?.role === "assistant" && isLikelyPartialUpdate(previous.text, text)) {
+      normalized[normalized.length - 1] = { ...item, text: longerText(previous.text, text) };
+      continue;
+    }
+
+    normalized.push(item);
   }
 
   return normalized;
+}
+
+function isLikelyPartialUpdate(previousText, nextText) {
+  if (!previousText || !nextText) return false;
+  return previousText === nextText || nextText.startsWith(previousText) || previousText.startsWith(nextText);
+}
+
+function longerText(first, second) {
+  return second.length >= first.length ? second : first;
 }

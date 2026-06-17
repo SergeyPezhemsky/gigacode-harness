@@ -14,6 +14,12 @@ export function streamAgentRun({ prompt, cwd, sessionId }, res) {
   const runCwd = normalizedCwd && fileExists(normalizedCwd) ? normalizedCwd : process.cwd();
   const child = spawn("gigacode", buildAgentArgs({ prompt, sessionId }), { cwd: runCwd, windowsHide: true });
   const runId = randomUUID();
+  let childExited = false;
+
+  const writeEvent = (event, payload) => {
+    if (res.writableEnded || res.destroyed) return;
+    res.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`);
+  };
 
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
@@ -21,23 +27,41 @@ export function streamAgentRun({ prompt, cwd, sessionId }, res) {
     Connection: "keep-alive"
   });
 
+  reqSafeClose(res, () => {
+    if (childExited || child.killed) return;
+    child.kill("SIGTERM");
+    setTimeout(() => {
+      if (!childExited) child.kill("SIGKILL");
+    }, 1500).unref();
+  });
+
   child.stdout.on("data", (chunk) => {
     for (const line of chunk.toString("utf8").split(/\r?\n/).filter(Boolean)) {
+      if (res.writableEnded || res.destroyed) return;
       res.write(`event: message\ndata: ${line}\n\n`);
     }
   });
 
   child.stderr.on("data", (chunk) => {
-    res.write(`event: stderr\ndata: ${JSON.stringify({ runId, text: chunk.toString("utf8") })}\n\n`);
+    writeEvent("stderr", { runId, text: chunk.toString("utf8") });
   });
 
   child.on("error", (error) => {
-    res.write(`event: error\ndata: ${JSON.stringify({ runId, error: error.message })}\n\n`);
-    res.end();
+    writeEvent("error", { runId, error: error.message });
+    if (!res.writableEnded && !res.destroyed) res.end();
   });
 
   child.on("close", (code) => {
-    res.write(`event: done\ndata: ${JSON.stringify({ runId, code })}\n\n`);
-    res.end();
+    childExited = true;
+    writeEvent("done", { runId, code });
+    if (!res.writableEnded && !res.destroyed) res.end();
+  });
+}
+
+function reqSafeClose(res, onClose) {
+  const req = res.req;
+  if (!req) return;
+  req.on("close", () => {
+    if (!res.writableEnded) onClose();
   });
 }

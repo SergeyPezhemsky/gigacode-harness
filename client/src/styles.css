@@ -338,6 +338,23 @@ nav button.active {
   max-height: 160px;
 }
 
+.compose-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.danger-button {
+  border-color: #c97972;
+  background: #fff2f1;
+  color: #8b3029;
+}
+
+.danger-button:hover {
+  border-color: #a84d45;
+}
+
 .thinking-panel {
   border-top: 1px solid #dbe3ec;
   background: #fbfcfe;
@@ -473,6 +490,14 @@ nav button.active {
 
   .chat-compose {
     grid-template-columns: 1fr;
+  }
+
+  .compose-actions {
+    justify-content: stretch;
+  }
+
+  .compose-actions button {
+    flex: 1;
   }
 
   .chat-thread .message {

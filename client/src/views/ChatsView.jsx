@@ -3,7 +3,7 @@ import { api, readSse } from "../api.js";
 import { roleLabels } from "../constants.js";
 import { EmptyState } from "../components/EmptyState.jsx";
 import { formatDate } from "../utils/format.js";
-import { thinkingText, toChatMessages } from "../utils/messages.js";
+import { thinkingText, toChatMessages, upsertMessage } from "../utils/messages.js";
 
 export function ChatsView({ chats, selectedChat, setSelectedChat, chatMessages, setChatMessages, refreshBase, setError }) {
   const [chatRunEvents, setChatRunEvents] = useState([]);
@@ -11,6 +11,7 @@ export function ChatsView({ chats, selectedChat, setSelectedChat, chatMessages, 
   const [continuePrompt, setContinuePrompt] = useState("");
   const [loading, setLoading] = useState("");
   const chatThreadRef = useRef(null);
+  const abortRef = useRef(null);
 
   useEffect(() => {
     if (!chatThreadRef.current) return;
@@ -22,7 +23,12 @@ export function ChatsView({ chats, selectedChat, setSelectedChat, chatMessages, 
     });
   }, [chatMessages, selectedChat]);
 
+  useEffect(() => {
+    return () => abortRef.current?.abort();
+  }, []);
+
   async function openChat(chat) {
+    abortRef.current?.abort();
     setSelectedChat(chat);
     setChatRunEvents([]);
     setChatRunDone(true);
@@ -50,10 +56,13 @@ export function ChatsView({ chats, selectedChat, setSelectedChat, chatMessages, 
     setChatMessages((items) => [...items, { id: `local-${Date.now()}`, role: "user", text: prompt }]);
 
     try {
+      const controller = new AbortController();
+      abortRef.current = controller;
       const response = await fetch(`/api/chats/${encodeURIComponent(selectedChat.id)}/continue`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt })
+        body: JSON.stringify({ prompt }),
+        signal: controller.signal
       });
 
       let streamEvents = [];
@@ -72,10 +81,7 @@ export function ChatsView({ chats, selectedChat, setSelectedChat, chatMessages, 
 
         const assistantMessage = toChatMessages([eventData]).find((message) => message.role === "assistant");
         if (assistantMessage) {
-          setChatMessages((items) => [
-            ...items.filter((item) => item.id !== assistantDraftId),
-            { ...assistantMessage, id: assistantDraftId }
-          ]);
+          setChatMessages((items) => upsertMessage(items, assistantMessage, assistantDraftId));
         }
       });
 
@@ -87,11 +93,20 @@ export function ChatsView({ chats, selectedChat, setSelectedChat, chatMessages, 
         throw new Error(`GigaCode завершился с кодом ${exitCode}`);
       }
     } catch (err) {
-      setError(err.message);
+      if (err.name === "AbortError") {
+        setChatRunEvents((items) => [...items, { id: `stopped-${Date.now()}`, text: "Процесс остановлен пользователем" }]);
+      } else {
+        setError(err.message);
+      }
     } finally {
+      abortRef.current = null;
       setChatRunDone(true);
       setLoading("");
     }
+  }
+
+  function stopChatRun() {
+    abortRef.current?.abort();
   }
 
   return (
@@ -144,7 +159,14 @@ export function ChatsView({ chats, selectedChat, setSelectedChat, chatMessages, 
                 onChange={(event) => setContinuePrompt(event.target.value)}
                 placeholder="Продолжить диалог"
               />
-              <button disabled={loading === "continue-chat" || !continuePrompt.trim()}>Отправить</button>
+              <div className="compose-actions">
+                <button disabled={loading === "continue-chat" || !continuePrompt.trim()}>Отправить</button>
+                {loading === "continue-chat" ? (
+                  <button className="danger-button" type="button" onClick={stopChatRun}>
+                    Стоп
+                  </button>
+                ) : null}
+              </div>
             </form>
           </>
         ) : (
