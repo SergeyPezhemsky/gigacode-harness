@@ -1,0 +1,26 @@
+{
+  "name": "gigacode-harness",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "nodemon server/index.js",
+    "dev:client": "vite --host 0.0.0.0 --config client/vite.config.js",
+    "start": "node server/index.js",
+    "build": "vite build --config client/vite.config.js",
+    "preview": "vite preview --host 0.0.0.0 --config client/vite.config.js"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "cors": "latest",
+    "express": "latest",
+    "vite": "latest",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "concurrently": "latest",
+    "nodemon": "latest"
+  }
+}
