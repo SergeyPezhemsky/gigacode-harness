@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "./api.js";
+import { ActivityRail } from "./components/ActivityRail.jsx";
 import { Sidebar } from "./components/Sidebar.jsx";
 import { Topbar } from "./components/Topbar.jsx";
 import { ChatsView } from "./views/ChatsView.jsx";
@@ -44,8 +45,10 @@ export function App() {
       setHealth(healthData);
       setChats(chatsData.chats);
       setSkills(skillsData.skills);
+      return { health: healthData, chats: chatsData.chats, skills: skillsData.skills };
     } catch (err) {
       setError(err.message);
+      return null;
     }
   }
 
@@ -54,7 +57,7 @@ export function App() {
       <Sidebar activeTab={activeTab} health={health} stats={stats} onTabChange={setActiveTab} />
 
       <section className="workspace">
-        <Topbar activeTab={activeTab} onRefresh={refreshBase} />
+        <Topbar activeTab={activeTab} health={health} stats={stats} onRefresh={refreshBase} />
         {error ? <div className="alert">{error}</div> : null}
 
         {activeTab === "chats" ? (
@@ -94,6 +97,8 @@ export function App() {
         ) : null}
 
         {activeTab === "run" ? <RunView setError={setError} /> : null}
+
+        <ActivityRail health={health} chatsCount={chats.length} skillsCount={skills.length} worktreesCount={worktrees.length} />
       </section>
     </main>
   );

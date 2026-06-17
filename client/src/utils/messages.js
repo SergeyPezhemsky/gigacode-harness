@@ -108,6 +108,9 @@ export function thinkingText(event) {
   if (event.error) return `Ошибка: ${event.error}`;
   if (event.type === "done") return `Процесс завершился с кодом ${event.code}`;
 
+  const reasoning = reasoningText(event);
+  if (reasoning) return reasoning;
+
   const parts = event.message?.parts || [];
   const functionCall = parts.find((part) => part?.functionCall);
   if (functionCall) {
@@ -119,7 +122,62 @@ export function thinkingText(event) {
     return `Результат инструмента: ${functionResponse.functionResponse.name || "tool"}`;
   }
 
-  if (event.subtype) return `${event.type || "event"}: ${event.subtype}`;
-  if (event.type && roleOf(event) !== "user" && roleOf(event) !== "assistant") return event.type;
   return "";
+}
+
+function reasoningText(event) {
+  const type = [event.type, event.item?.type, event.delta?.type, event.message?.type]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  const isReasoningEvent = type.includes("reasoning") || type.includes("thought") || type.includes("thinking");
+  if (!isReasoningEvent) return "";
+
+  const text = firstReasoningText([
+    event.thought,
+    event.thinking,
+    event.reasoning,
+    event.summary,
+    event.delta,
+    event.text,
+    event.item?.summary,
+    event.item?.content,
+    event.item?.text,
+    event.message?.parts,
+    event.message?.content
+  ]);
+
+  return text ? text.trim() : "";
+}
+
+function firstReasoningText(candidates) {
+  for (const candidate of candidates) {
+    const text = extractReasoningText(candidate);
+    if (text) return text;
+  }
+  return "";
+}
+
+function extractReasoningText(value, depth = 0) {
+  if (value == null || depth > 5) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return "";
+  if (Array.isArray(value)) {
+    return value
+      .map((part) => extractReasoningText(part, depth + 1))
+      .filter(Boolean)
+      .join("\n");
+  }
+  if (typeof value !== "object") return "";
+
+  return firstReasoningText([
+    value.text,
+    value.content,
+    value.delta,
+    value.summary,
+    value.thought,
+    value.thinking,
+    value.reasoning,
+    value.parts
+  ]);
 }
