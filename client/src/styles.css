@@ -252,6 +252,10 @@ nav button.active {
   padding: 14px;
 }
 
+.chat-thread {
+  gap: 12px;
+}
+
 .message {
   display: grid;
   gap: 7px;
@@ -278,6 +282,33 @@ nav button.active {
 .message.user {
   border-color: #cad9eb;
   background: #f5f9ff;
+}
+
+.chat-thread .message {
+  width: min(78%, 860px);
+}
+
+.chat-thread .message.assistant,
+.chat-thread .message.system,
+.chat-thread .message.raw {
+  justify-self: start;
+}
+
+.chat-thread .message.user {
+  justify-self: end;
+  border-color: #b8c9df;
+  background: #eef5ff;
+}
+
+.chat-thread .message.user span {
+  justify-self: end;
+  background: #d9e8fb;
+  color: #244d76;
+}
+
+.chat-thread .message.assistant span {
+  background: #dceee4;
+  color: #28613d;
 }
 
 .skill-body {
@@ -385,5 +416,9 @@ nav button.active {
   .run-layout form {
     border-right: 0;
     border-bottom: 1px solid #dbe3ec;
+  }
+
+  .chat-thread .message {
+    width: 100%;
   }
 }

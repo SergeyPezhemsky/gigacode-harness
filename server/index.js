@@ -149,7 +149,7 @@ async function parseSkill(skillDir, scope, projectPath = null) {
 
   return {
     name: metadata.name || path.basename(skillDir),
-    description: metadata.description || "No description",
+    description: metadata.description || "Нет описания",
     scope,
     path: skillDir,
     projectPath,
@@ -238,7 +238,7 @@ app.get("/api/chats/:id", async (req, res) => {
   const chats = await listChats();
   const chat = chats.find((item) => item.id === req.params.id);
   if (!chat) {
-    res.status(404).json({ error: "Chat not found" });
+    res.status(404).json({ error: "Чат не найден" });
     return;
   }
 
@@ -256,7 +256,7 @@ app.get("/api/skills", async (req, res) => {
 app.get("/api/skills/file", async (req, res) => {
   const skillPath = normalizePath(req.query.path);
   if (!skillPath || !isGigacodeSkillPath(skillPath) || !fileExists(path.join(skillPath, "SKILL.md"))) {
-    res.status(404).json({ error: "Skill not found" });
+    res.status(404).json({ error: "Навык не найден" });
     return;
   }
   res.json({ content: await fs.readFile(path.join(skillPath, "SKILL.md"), "utf8") });
@@ -277,7 +277,7 @@ app.post("/api/worktrees", async (req, res) => {
   const base = String(req.body.base || "").trim();
 
   if (!repoPath || !newPath || !branch) {
-    res.status(400).json({ error: "repoPath, path, and branch are required" });
+    res.status(400).json({ error: "Нужно заполнить путь к репозиторию, путь worktree и ветку" });
     return;
   }
 
@@ -298,7 +298,7 @@ app.post("/api/agent/run", (req, res) => {
   const args = [];
 
   if (!prompt) {
-    res.status(400).json({ error: "prompt is required" });
+    res.status(400).json({ error: "Нужно заполнить промпт" });
     return;
   }
 
@@ -338,7 +338,7 @@ app.post("/api/agent/run", (req, res) => {
 app.use(express.static(clientDist));
 app.use((req, res) => {
   if (req.path.startsWith("/api")) {
-    res.status(404).json({ error: "Not found" });
+    res.status(404).json({ error: "Не найдено" });
     return;
   }
 

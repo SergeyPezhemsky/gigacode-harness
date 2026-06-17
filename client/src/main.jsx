@@ -2,7 +2,28 @@ import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
-const tabs = ["Chats", "Skills", "Worktrees", "Run"];
+const tabs = [
+  { label: "Чаты", value: "chats" },
+  { label: "Навыки", value: "skills" },
+  { label: "Ворк-три", value: "worktrees" },
+  { label: "Запуск", value: "run" }
+];
+
+const roleLabels = {
+  assistant: "GigaCode",
+  user: "Вы",
+  system: "Система",
+  event: "Событие",
+  result: "GigaCode",
+  raw: "Сырой текст",
+  stderr: "Ошибка",
+  done: "Готово"
+};
+
+const scopeLabels = {
+  personal: "Личный",
+  project: "Проектный"
+};
 
 async function api(path, options) {
   const response = await fetch(path, {
@@ -10,7 +31,7 @@ async function api(path, options) {
     ...options
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error || "Request failed");
+  if (!response.ok) throw new Error(data.error || "Запрос не выполнен");
   return data;
 }
 
@@ -22,22 +43,65 @@ function formatDate(value) {
   }).format(new Date(value));
 }
 
-function messageText(item) {
-  const payload = item?.message ?? item;
-  const content = payload?.content;
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content.map((part) => part?.text || part?.content || "").filter(Boolean).join("\n");
+function extractText(value, depth = 0) {
+  if (value == null || depth > 5) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) {
+    return value
+      .map((part) => extractText(part, depth + 1))
+      .filter(Boolean)
+      .join("\n");
   }
-  return item?.result || item?.text || "";
+  if (typeof value !== "object") return "";
+
+  const candidates = [
+    value.text,
+    value.content,
+    value.delta,
+    value.result,
+    value.output,
+    value.output_text,
+    value.message,
+    value.parts
+  ];
+
+  for (const candidate of candidates) {
+    const text = extractText(candidate, depth + 1);
+    if (text) return text;
+  }
+
+  return "";
+}
+
+function messageText(item) {
+  return extractText(item?.message ?? item);
 }
 
 function roleOf(item) {
-  return item?.message?.role || item?.type || "event";
+  const role = item?.message?.role || item?.role || item?.type || "event";
+  if (role === "result") return "assistant";
+  if (role === "stderr") return "stderr";
+  if (role === "raw") return "raw";
+  return role;
+}
+
+function displayRole(item) {
+  return roleLabels[roleOf(item)] || roleOf(item);
+}
+
+function toChatMessages(messages) {
+  return messages
+    .map((item, index) => {
+      const role = roleOf(item);
+      const text = messageText(item).trim();
+      return { id: item.uuid || item.id || index, role, text };
+    })
+    .filter((item) => item.text && ["user", "assistant", "system", "raw"].includes(item.role));
 }
 
 function App() {
-  const [activeTab, setActiveTab] = useState("Chats");
+  const [activeTab, setActiveTab] = useState("chats");
   const [health, setHealth] = useState(null);
   const [chats, setChats] = useState([]);
   const [selectedChat, setSelectedChat] = useState(null);
@@ -55,9 +119,9 @@ function App() {
 
   const stats = useMemo(
     () => [
-      { label: "Chats", value: chats.length },
-      { label: "Skills", value: skills.length },
-      { label: "Worktrees", value: worktrees.length }
+      { label: "Чаты", value: chats.length },
+      { label: "Навыки", value: skills.length },
+      { label: "Ворк-три", value: worktrees.length }
     ],
     [chats.length, skills.length, worktrees.length]
   );
@@ -159,7 +223,7 @@ function App() {
 
       if (!response.ok) {
         const data = await response.json();
-        throw new Error(data.error || "Unable to start gigacode");
+        throw new Error(data.error || "Не удалось запустить gigacode");
       }
 
       const reader = response.body.getReader();
@@ -195,14 +259,14 @@ function App() {
           <span className={health?.ok ? "status-dot online" : "status-dot"} />
           <div>
             <strong>GigaCode Harness</strong>
-            <small>{health?.gigacodeHomeExists ? health.gigacodeHome : ".gigacode not found"}</small>
+            <small>{health?.gigacodeHomeExists ? health.gigacodeHome : ".gigacode не найден"}</small>
           </div>
         </div>
 
         <nav>
           {tabs.map((tab) => (
-            <button key={tab} className={activeTab === tab ? "active" : ""} onClick={() => setActiveTab(tab)}>
-              {tab}
+            <button key={tab.value} className={activeTab === tab.value ? "active" : ""} onClick={() => setActiveTab(tab.value)}>
+              {tab.label}
             </button>
           ))}
         </nav>
@@ -220,15 +284,15 @@ function App() {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <h1>{activeTab}</h1>
-            <p>Local web control surface for GigaCode sessions, skills, and isolated worktrees.</p>
+            <h1>{tabs.find((tab) => tab.value === activeTab)?.label}</h1>
+            <p>Локальная панель для сессий GigaCode, навыков и изолированных git worktree.</p>
           </div>
-          <button onClick={refreshBase}>Refresh</button>
+          <button onClick={refreshBase}>Обновить</button>
         </header>
 
         {error ? <div className="alert">{error}</div> : null}
 
-        {activeTab === "Chats" ? (
+        {activeTab === "chats" ? (
           <section className="split">
             <div className="list-pane">
               {chats.length ? (
@@ -244,7 +308,7 @@ function App() {
                   </button>
                 ))
               ) : (
-                <EmptyState title="No chats found" detail="Expected .gigacode/projects/*/chats/*.jsonl." />
+                <EmptyState title="Чаты не найдены" detail="Ожидаются файлы .gigacode/projects/*/chats/*.jsonl." />
               )}
             </div>
             <div className="detail-pane">
@@ -254,28 +318,28 @@ function App() {
                     <strong>{selectedChat.title}</strong>
                     <small>{selectedChat.filePath}</small>
                   </div>
-                  <div className="messages">
-                    {chatMessages.map((item, index) => (
-                      <article key={`${item.uuid || index}`} className={`message ${roleOf(item)}`}>
-                        <span>{roleOf(item)}</span>
-                        <pre>{messageText(item) || JSON.stringify(item, null, 2)}</pre>
+                  <div className="messages chat-thread">
+                    {toChatMessages(chatMessages).map((item) => (
+                      <article key={item.id} className={`message ${item.role}`}>
+                        <span>{roleLabels[item.role] || item.role}</span>
+                        <pre>{item.text}</pre>
                       </article>
                     ))}
                   </div>
                 </>
               ) : (
-                <EmptyState title="Select a chat" detail="Chat contents are loaded from JSONL on demand." />
+                <EmptyState title="Выберите чат" detail="Содержимое загружается из JSONL по запросу." />
               )}
             </div>
           </section>
         ) : null}
 
-        {activeTab === "Skills" ? (
+        {activeTab === "skills" ? (
           <section className="split">
             <div className="list-pane">
               <div className="inline-form">
-                <input value={repoPath} onChange={(event) => setRepoPath(event.target.value)} placeholder="Project path for .gigacode/skills" />
-                <button onClick={refreshSkillsForProject}>Load</button>
+                <input value={repoPath} onChange={(event) => setRepoPath(event.target.value)} placeholder="Путь к проекту для .gigacode/skills" />
+                <button onClick={refreshSkillsForProject}>Загрузить</button>
               </div>
               {skills.length ? (
                 skills.map((skill) => (
@@ -286,11 +350,11 @@ function App() {
                   >
                     <strong>{skill.name}</strong>
                     <span>{skill.description}</span>
-                    <small>{skill.scope}</small>
+                    <small>{scopeLabels[skill.scope] || skill.scope}</small>
                   </button>
                 ))
               ) : (
-                <EmptyState title="No skills found" detail="Personal skills are expected under ~/.gigacode/skills." />
+                <EmptyState title="Навыки не найдены" detail="Личные навыки ожидаются в ~/.gigacode/skills." />
               )}
             </div>
             <div className="detail-pane">
@@ -303,28 +367,28 @@ function App() {
                   <pre className="skill-body">{skillContent}</pre>
                 </>
               ) : (
-                <EmptyState title="Select a skill" detail="The full SKILL.md appears here." />
+                <EmptyState title="Выберите навык" detail="Здесь появится полный SKILL.md." />
               )}
             </div>
           </section>
         ) : null}
 
-        {activeTab === "Worktrees" ? (
+        {activeTab === "worktrees" ? (
           <section className="worktree-layout">
             <div className="toolbar">
-              <input value={repoPath} onChange={(event) => setRepoPath(event.target.value)} placeholder="Repository path" />
-              <button onClick={refreshWorktrees} disabled={loading === "worktrees"}>List</button>
+              <input value={repoPath} onChange={(event) => setRepoPath(event.target.value)} placeholder="Путь к репозиторию" />
+              <button onClick={refreshWorktrees} disabled={loading === "worktrees"}>Показать</button>
             </div>
             <form className="create-form" onSubmit={createWorktree}>
-              <input value={worktreeForm.path} onChange={(event) => setWorktreeForm({ ...worktreeForm, path: event.target.value })} placeholder="New worktree path" />
-              <input value={worktreeForm.branch} onChange={(event) => setWorktreeForm({ ...worktreeForm, branch: event.target.value })} placeholder="New branch" />
-              <input value={worktreeForm.base} onChange={(event) => setWorktreeForm({ ...worktreeForm, base: event.target.value })} placeholder="Base ref" />
-              <button disabled={loading === "create-worktree"}>Create</button>
+              <input value={worktreeForm.path} onChange={(event) => setWorktreeForm({ ...worktreeForm, path: event.target.value })} placeholder="Путь нового worktree" />
+              <input value={worktreeForm.branch} onChange={(event) => setWorktreeForm({ ...worktreeForm, branch: event.target.value })} placeholder="Новая ветка" />
+              <input value={worktreeForm.base} onChange={(event) => setWorktreeForm({ ...worktreeForm, base: event.target.value })} placeholder="Базовый ref" />
+              <button disabled={loading === "create-worktree"}>Создать</button>
             </form>
             <div className="table">
               {worktrees.map((worktree) => (
                 <div key={worktree.path} className="row">
-                  <strong>{worktree.branch || "detached"}</strong>
+                  <strong>{worktree.branch || "без ветки"}</strong>
                   <span>{worktree.path}</span>
                   <small>{worktree.HEAD}</small>
                 </div>
@@ -333,17 +397,17 @@ function App() {
           </section>
         ) : null}
 
-        {activeTab === "Run" ? (
+        {activeTab === "run" ? (
           <section className="run-layout">
             <form onSubmit={runPrompt}>
-              <input value={runForm.cwd} onChange={(event) => setRunForm({ ...runForm, cwd: event.target.value })} placeholder="Working directory" />
-              <textarea value={runForm.prompt} onChange={(event) => setRunForm({ ...runForm, prompt: event.target.value })} placeholder="Prompt for gigacode" />
-              <button>Run gigacode</button>
+              <input value={runForm.cwd} onChange={(event) => setRunForm({ ...runForm, cwd: event.target.value })} placeholder="Рабочая директория" />
+              <textarea value={runForm.prompt} onChange={(event) => setRunForm({ ...runForm, prompt: event.target.value })} placeholder="Промпт для gigacode" />
+              <button>Запустить gigacode</button>
             </form>
             <div className="messages">
               {runEvents.map((event, index) => (
                 <article key={index} className={`message ${event.type || "event"}`}>
-                  <span>{event.type || event.subtype || "event"}</span>
+                  <span>{displayRole(event)}</span>
                   <pre>{messageText(event) || JSON.stringify(event, null, 2)}</pre>
                 </article>
               ))}

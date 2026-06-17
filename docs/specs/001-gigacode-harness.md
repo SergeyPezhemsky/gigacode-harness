@@ -1,78 +1,79 @@
-# GigaCode Harness Spec
+# Спецификация GigaCode Harness
 
-## Context
+## Контекст
 
-GigaCode is treated as an enterprise fork of Qwen Code:
+GigaCode рассматривается как корпоративный форк Qwen Code:
 
-- executable: `gigacode` instead of `qwen`;
-- user home directory: `~/.gigacode` instead of `~/.qwen`;
-- project directory: `.gigacode` instead of `.qwen`;
-- storage and command behavior should be assumed Qwen-compatible unless the fork proves otherwise.
+- исполняемый файл: `gigacode` вместо `qwen`;
+- домашняя директория пользователя: `~/.gigacode` вместо `~/.qwen`;
+- проектная директория: `.gigacode` вместо `.qwen`;
+- формат хранения и поведение команд считаются совместимыми с Qwen, пока форк не докажет обратное.
 
-Qwen Code documentation facts used for this design:
+Факты из документации Qwen Code, на которых основан дизайн:
 
-- Qwen Code is a terminal-first coding agent with skills and subagents.
-- User settings are stored under `~/.qwen/settings.json`; project settings and project skills live under `.qwen/`.
-- Skills are directories with a required `SKILL.md` file. Personal skills live under `~/.qwen/skills/`; project skills under `.qwen/skills/`.
-- Headless mode supports `--prompt`, `--continue`, `--resume <session_id>`, and structured `--output-format json` / `stream-json`.
-- Headless session data is project-scoped JSONL under `~/.qwen/projects/<sanitized-cwd>/chats`.
-- Stream JSON plus partial messages is the preferred primitive for a web UI that needs live output.
+- Qwen Code является терминальным coding-agent с навыками и subagent.
+- Пользовательские настройки хранятся в `~/.qwen/settings.json`; проектные настройки и проектные навыки находятся в `.qwen/`.
+- Навыки являются директориями с обязательным файлом `SKILL.md`. Личные навыки находятся в `~/.qwen/skills/`, проектные - в `.qwen/skills/`.
+- Headless-режим поддерживает `--prompt`, `--continue`, `--resume <session_id>` и структурированный вывод `--output-format json` / `stream-json`.
+- Данные headless-сессий хранятся в проектных JSONL-файлах `~/.qwen/projects/<sanitized-cwd>/chats`.
+- Stream JSON и partial messages являются предпочтительной основой для веб-интерфейса с live-выводом.
 
-For GigaCode Harness, every `.qwen`/`qwen` reference above maps to `.gigacode`/`gigacode`.
+Для GigaCode Harness каждая ссылка `.qwen`/`qwen` выше отображается на `.gigacode`/`gigacode`.
 
-## Goals
+## Цели
 
-1. Run a local web server and browser UI on the developer machine.
-2. Show the list of existing GigaCode chats from `~/.gigacode`.
-3. Show personal and project skills.
-4. Create new git worktrees from the UI.
-5. Provide a minimal prompt runner that invokes `gigacode` headlessly and streams events to the UI.
+1. Запускать локальный веб-сервер и браузерный UI на машине разработчика.
+2. Показывать список существующих чатов GigaCode из `~/.gigacode`.
+3. Показывать личные и проектные навыки.
+4. Создавать новые git worktree из UI.
+5. Давать минимальный запуск промптов через `gigacode` в headless-режиме с потоковой передачей событий в UI.
 
-## Non-Goals For The First Slice
+## Не цели первого среза
 
-- Reimplement the full Codex terminal UI.
-- Store secrets or model provider settings in the harness database.
-- Modify GigaCode internal files beyond reading chats and skills.
-- Replace GigaCode authentication.
-- Manage remote Git hosting or PR creation.
+- Полностью переcоздавать терминальный UI Codex.
+- Хранить секреты или настройки провайдера моделей в базе harness.
+- Изменять внутренние файлы GigaCode, кроме чтения чатов и навыков.
+- Заменять аутентификацию GigaCode.
+- Управлять удаленным Git-хостингом или созданием PR.
 
-## Requirements
+## Требования
 
-### Chats
+### Чаты
 
-- Read from `~/.gigacode/projects/**/chats/*.jsonl`.
-- If the projects layout is absent, scan `~/.gigacode/**/chats/*.jsonl` as a fallback.
-- Show chat title, project identifier, update time, and preview.
-- Load the selected chat JSONL on demand.
-- Tolerate unknown JSONL event shapes and malformed lines.
+- Читать `~/.gigacode/projects/**/chats/*.jsonl`.
+- Если структура `projects` отсутствует, использовать резервное сканирование: `~/.gigacode/**/chats/*.jsonl`.
+- Показывать заголовок чата, идентификатор проекта, время обновления и preview.
+- Загружать выбранный JSONL-чат по запросу.
+- Терпимо обрабатывать неизвестные формы JSONL-событий и поврежденные строки.
+- Отображать содержимое выбранной сессии как чат с сообщениями, а не как журнал JSON-событий.
 
-### Skills
+### Навыки
 
-- Read personal skills from `~/.gigacode/skills/<skill>/SKILL.md`.
-- If a project path is provided, also read project skills from `<project>/.gigacode/skills/<skill>/SKILL.md`.
-- Parse YAML frontmatter fields `name`, `description`, and `disable-model-invocation`.
-- Show the full `SKILL.md` for a selected skill.
+- Читать личные навыки из `~/.gigacode/skills/<skill>/SKILL.md`.
+- Если передан путь к проекту, дополнительно читать проектные навыки из `<project>/.gigacode/skills/<skill>/SKILL.md`.
+- Парсить YAML frontmatter поля `name`, `description` и `disable-model-invocation`.
+- Показывать полный `SKILL.md` выбранного навыка.
 
-### Worktrees
+### Worktree
 
-- Accept a repository path from the user.
-- List worktrees using `git worktree list --porcelain`.
-- Create worktrees using `git worktree add -b <branch> <path> <base>`.
-- Use process argument arrays, not shell string interpolation.
+- Принимать путь к репозиторию от пользователя.
+- Получать список worktree через `git worktree list --porcelain`.
+- Создавать worktree через `git worktree add -b <branch> <path> <base>`.
+- Использовать массивы аргументов процесса, а не shell string interpolation.
 
 ### Agent Runner
 
-- Accept `cwd` and prompt from UI.
-- Run `gigacode --prompt <prompt> --output-format stream-json --include-partial-messages`.
-- Optionally allow session resume later through `--resume <session_id>`.
-- Stream stdout events to the browser using Server-Sent Events.
-- Surface missing executable errors clearly.
+- Принимать `cwd` и prompt из UI.
+- Запускать `gigacode --prompt <prompt> --output-format stream-json --include-partial-messages`.
+- Позже опционально разрешить resume сессии через `--resume <session_id>`.
+- Передавать события stdout в браузер через Server-Sent Events.
+- Ясно показывать ошибки отсутствующего исполняемого файла.
 
-## Architecture
+## Архитектура
 
-### Backend
+### Бэкенд
 
-Express owns the local machine boundary:
+Express отвечает за границу локальной машины:
 
 - `GET /api/health`
 - `GET /api/chats`
@@ -83,50 +84,50 @@ Express owns the local machine boundary:
 - `POST /api/worktrees`
 - `POST /api/agent/run`
 
-The server performs filesystem and process work. The browser never reads local files directly.
+Сервер выполняет файловые и процессные операции. Браузер не читает локальные файлы напрямую.
 
-### Frontend
+### Фронтенд
 
-React/Vite provides four primary views:
+React/Vite предоставляет четыре основных раздела:
 
-- Chats: list and inspect JSONL sessions.
-- Skills: list personal/project skills and inspect `SKILL.md`.
-- Worktrees: list and create isolated worktrees.
-- Run: minimal streamed prompt execution.
+- Чаты: список и просмотр JSONL-сессий в виде диалога.
+- Навыки: список личных/проектных навыков и просмотр `SKILL.md`.
+- Worktree: список и создание изолированных worktree.
+- Запуск: минимальный потоковый запуск промпта.
 
-The UI is task-first, not a marketing page.
+UI ориентирован на задачу, а не на маркетинговую страницу.
 
-## Open Questions
+## Открытые вопросы
 
-- Exact GigaCode session schema may differ from Qwen Code. Current parser intentionally handles unknown shapes.
-- GigaCode may expose a local `serve` command or SDK-compatible binary. If available, the harness should prefer a stable protocol over raw CLI spawning.
-- The worktree default target directory convention should be decided after real team usage. Current UI asks for explicit path to avoid guessing.
+- Точная схема сессий GigaCode может отличаться от Qwen Code. Текущий парсер намеренно поддерживает неизвестные формы событий.
+- GigaCode может иметь локальную команду `serve` или SDK-совместимый исполняемый файл. Если она доступна, harness должен предпочесть стабильный протокол прямому запуску CLI.
+- Соглашение о директории по умолчанию для worktree нужно определить после реального использования командой. Текущий UI просит явный путь, чтобы не гадать.
 
-## Iteration Plan
+## План итераций
 
-### Phase 1: Local Read-Only Harness
+### Фаза 1: локальный harness только для чтения
 
 - Health endpoint.
-- Chat list and detail loading.
-- Personal/project skill list and detail loading.
-- Static production serving.
+- Список чатов и загрузка деталей.
+- Список личных/проектных навыков и загрузка деталей.
+- Статическая production-раздача.
 
-### Phase 2: Controlled Local Actions
+### Фаза 2: контролируемые локальные действия
 
-- Worktree list/create.
-- Prompt runner via headless `gigacode`.
-- Better error reporting for missing Git/GigaCode.
+- Список/создание worktree.
+- Prompt runner через headless `gigacode`.
+- Более понятные ошибки при отсутствии Git/GigaCode.
 
-### Phase 3: Codex-Like Workflow
+### Фаза 3: Codex-подобный рабочий процесс
 
-- Chat continuation and resume controls.
-- Per-worktree active agent runs.
-- Approval/status panels for tool calls.
-- Session export/import.
+- Продолжение чата и элементы управления resume.
+- Активные agent-run для каждого worktree.
+- Панели approvals/status для tool calls.
+- Экспорт/импорт сессий.
 
-### Phase 4: Team Hardening
+### Фаза 4: командное усиление
 
-- Configurable allowed roots.
-- Audit log for process actions.
-- Optional auth on localhost.
-- Tests around path parsing, JSONL parsing, and git command construction.
+- Настраиваемые разрешенные корневые директории.
+- Audit log для процессных действий.
+- Опциональная auth на localhost.
+- Тесты для парсинга путей, JSONL и конструирования git-команд.
