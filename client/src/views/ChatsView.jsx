@@ -119,8 +119,7 @@ export function ChatsView({ chats, selectedChat, setSelectedChat, chatMessages, 
               className={selectedChat?.id === chat.id ? "list-item selected" : "list-item"}
               onClick={() => openChat(chat)}
             >
-              <strong>{chat.title}</strong>
-              <span>{chat.projectName}</span>
+              <span>{chat.title}</span>
               <small>{formatDate(chat.updatedAt)}</small>
             </button>
           ))
